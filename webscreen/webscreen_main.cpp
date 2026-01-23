@@ -202,6 +202,7 @@ static bool initialize_network(void) {
     return false;
   }
 
+  WEBSCREEN_DEBUG_PRINTF("WiFi SSID: %s\n", g_webscreen_config.wifi.ssid);
   return webscreen_network_init(&g_webscreen_config);
 }
 

@@ -300,6 +300,26 @@ static jsval_t js_print(struct js *js, jsval_t *args, int nargs) {
   return js_mknull();
 }
 
+// Memory stats - useful for debugging memory issues
+static jsval_t js_mem_stats(struct js *js, jsval_t *args, int nargs) {
+  size_t freeHeap = ESP.getFreeHeap();
+  size_t minFreeHeap = ESP.getMinFreeHeap();
+  size_t heapSize = ESP.getHeapSize();
+
+  // Get LVGL memory info
+  lv_mem_monitor_t mon;
+  lv_mem_monitor(&mon);
+
+  LOGF("=== Memory Stats ===\n");
+  LOGF("ESP32 Heap: %u / %u bytes (min free: %u)\n", freeHeap, heapSize, minFreeHeap);
+  LOGF("LVGL Memory: %u / %u bytes (%u%% used, %u%% frag)\n",
+       mon.total_size - mon.free_size, mon.total_size, mon.used_pct, mon.frag_pct);
+  LOGF("====================\n");
+
+  // Return free heap as a number for JS to use
+  return js_mknum(freeHeap);
+}
+
 // Wi-Fi connect
 static jsval_t js_wifi_connect(struct js *js, jsval_t *args, int nargs) {
   if (nargs != 2) return js_mkfalse();
@@ -687,6 +707,9 @@ static const lv_font_t *get_font_for_size(int size) {  // Map the integer size t
   return &lv_font_montserrat_14;
 }
 
+// Forward declaration for store_lv_obj (defined later in the file)
+static int store_lv_obj(lv_obj_t *obj);
+
 static jsval_t js_lvgl_draw_label(struct js *js, jsval_t *args, int nargs) {  // We expect at least 3 args: text, x, y. 4th arg is optional fontSize
   if (nargs < 3) {
     LOG("draw_label: expects text, x, y, [fontSize]");
@@ -719,27 +742,34 @@ static jsval_t js_lvgl_draw_label(struct js *js, jsval_t *args, int nargs) {  //
 
 static jsval_t js_lvgl_draw_rect(struct js *js, jsval_t *args, int nargs) {
   if (nargs < 4) {
-    LOG("draw_rect: expects x,y,w,h");
-    return js_mknull();
+    LOG("draw_rect: expects x, y, w, h [, color]");
+    return js_mknum(-1);
   }
   int x = (int)js_getnum(args[0]);
   int y = (int)js_getnum(args[1]);
   int w = (int)js_getnum(args[2]);
   int h = (int)js_getnum(args[3]);
 
+  // Optional color parameter (default: green 0x00ff00)
+  uint32_t color = 0x00ff00;
+  if (nargs >= 5) {
+    color = (uint32_t)js_getnum(args[4]);
+  }
+
   lv_obj_t *rect = lv_obj_create(lv_scr_act());
   lv_obj_set_size(rect, w, h);
   lv_obj_set_pos(rect, x, y);
 
-  // optional styling
-  static lv_style_t styleRect;
-  lv_style_init(&styleRect);
-  lv_style_set_bg_color(&styleRect, lv_color_hex(0x00ff00));
-  lv_style_set_radius(&styleRect, 5);
-  lv_obj_add_style(rect, &styleRect, 0);
+  // Create a new style for this rect (not static, so each rect can have its own color)
+  lv_style_t *styleRect = new lv_style_t;
+  lv_style_init(styleRect);
+  lv_style_set_bg_color(styleRect, lv_color_hex(color));
+  lv_style_set_radius(styleRect, 5);
+  lv_obj_add_style(rect, styleRect, 0);
 
-  LOGF("draw_rect: at (%d,%d), size(%d,%d)\n", x, y, w, h);
-  return js_mknull();
+  int handle = store_lv_obj(rect);
+  LOGF("draw_rect: at (%d,%d), size(%d,%d), color=0x%06X => handle %d\n", x, y, w, h, color, handle);
+  return js_mknum(handle);
 }
 
 static jsval_t js_lvgl_show_image(struct js *js, jsval_t *args, int nargs) {
@@ -1004,7 +1034,10 @@ static jsval_t js_label_set_text(struct js *js, jsval_t *args, int nargs) {
   if (nargs < 2) return js_mknull();
   int lblHandle = (int)js_getnum(args[0]);
   const char *rawText = js_str(js, args[1]);
-  if (!rawText) return js_mknull();
+  if (!rawText) {
+    LOG("label_set_text: invalid text argument");
+    return js_mknull();
+  }
 
   // Convert to an Arduino String so we can trim quotes.
   String txt(rawText);
@@ -1018,7 +1051,16 @@ static jsval_t js_label_set_text(struct js *js, jsval_t *args, int nargs) {
 
   // Retrieve the lv_obj_t* from the handle
   lv_obj_t *label = get_lv_obj(lblHandle);
-  if (!label) return js_mknull();
+  if (!label) {
+    LOGF("label_set_text: invalid handle %d\n", lblHandle);
+    return js_mknull();
+  }
+
+  // Check if we have enough free heap before allocating
+  size_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap < 10000) {
+    LOGF("label_set_text: WARNING - low memory (%u bytes free)\n", freeHeap);
+  }
 
   // Finally set the text (now without extra quotes)
   lv_label_set_text(label, txt.c_str());
@@ -3051,6 +3093,7 @@ void register_js_functions() {
 
   // Basic
   js_set(js, global, "print", js_mkfun(js_print));
+  js_set(js, global, "mem_stats", js_mkfun(js_mem_stats));
   js_set(js, global, "wifi_connect", js_mkfun(js_wifi_connect));
   js_set(js, global, "wifi_status", js_mkfun(js_wifi_status));
   js_set(js, global, "wifi_get_ip", js_mkfun(js_wifi_get_ip));

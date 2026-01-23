@@ -106,7 +106,7 @@ extern "C" {
 
 /**
  * @brief Main WebScreen configuration structure
- * 
+ *
  * This structure holds all runtime configuration options.
  * Loaded from SD card JSON file at startup.
  */

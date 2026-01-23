@@ -1,5 +1,6 @@
 #include "serial_commands.h"
 #include "globals.h"
+#include "webscreen_config.h"
 #include <WiFi.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
@@ -166,7 +167,7 @@ void SerialCommands::showInfo() {
                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   
   Serial.printf("SDK Version: %s\n", ESP.getSdkVersion());
-  Serial.println("WebScreen Version: 2.0.0");
+  Serial.println("WebScreen Version: " WEBSCREEN_VERSION_STRING);
   Serial.println("Build Date: " __DATE__ " " __TIME__);
 }
 
@@ -337,10 +338,10 @@ void SerialCommands::configSet(const String& args) {
     printError("Usage: /config set <key> <value>");
     return;
   }
-  
+
   String key = args.substring(0, spaceIndex);
   String value = args.substring(spaceIndex + 1);
-  
+
   if (!SD_MMC.begin()) {
     printError("SD card not available");
     return;
@@ -817,7 +818,7 @@ void SerialCommands::backup(const String& args) {
       metaFile.printf("  \"timestamp\": %lu,\n", millis() / 1000);
       metaFile.printf("  \"wifi_ssid\": \"%s\",\n", WiFi.SSID().c_str());
       metaFile.printf("  \"free_heap\": %d,\n", ESP.getFreeHeap());
-      metaFile.printf("  \"version\": \"2.0.0\"\n");
+      metaFile.printf("  \"version\": \"%s\"\n", WEBSCREEN_VERSION_STRING);
       metaFile.printf("}\n");
       metaFile.close();
     }
