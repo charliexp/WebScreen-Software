@@ -402,15 +402,22 @@ void SerialCommands::configGet(const String& args) {
   deserializeJson(doc, file);
   file.close();
   
-  JsonVariant result;
-  
-  // Handle nested keys (e.g., "wifi.ssid")
-  if (key.indexOf('.') > 0) {
-    String section = key.substring(0, key.indexOf('.'));
-    String subkey = key.substring(key.indexOf('.') + 1);
-    result = doc[section][subkey];
-  } else {
-    result = doc[key];
+  JsonVariant result = doc.as<JsonVariant>();
+
+  // Handle nested keys (e.g., "settings.wifi.ssid")
+  // Split by '.' and traverse the JSON tree
+  String remaining = key;
+  while (remaining.length() > 0 && !result.isNull()) {
+    int dotPos = remaining.indexOf('.');
+    String part;
+    if (dotPos > 0) {
+      part = remaining.substring(0, dotPos);
+      remaining = remaining.substring(dotPos + 1);
+    } else {
+      part = remaining;
+      remaining = "";
+    }
+    result = result[part];
   }
   
   if (result.isNull()) {

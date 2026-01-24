@@ -382,7 +382,7 @@ bool webscreen_runtime_start_javascript_task(void) {
   BaseType_t result = xTaskCreatePinnedToCore(
     webscreen_runtime_javascript_task,
     "WebScreenJS",
-    16384,  // Stack size
+    24576,  // Stack size - increased from 16KB to 24KB for complex JS operations
     NULL,   // Parameters
     1,      // Priority
     &g_js_task_handle,

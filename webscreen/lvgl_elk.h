@@ -44,7 +44,7 @@ static unsigned long lastWiFiReconnectAttempt = 0;
 /******************************************************************************
  * A) Elk Memory + Global Instances
  ******************************************************************************/
-#define ELK_HEAP_BYTES (48 * 1024)
+#define ELK_HEAP_BYTES (64 * 1024)  // Increased from 48KB to 64KB for larger scripts
 static uint8_t elk_memory[ELK_HEAP_BYTES];
 struct js *js = NULL;  // Global Elk instance
 // Adjust as needed
@@ -382,7 +382,20 @@ static jsval_t js_delay(struct js *js, jsval_t *args, int nargs) {
 static void elk_timer_cb(lv_timer_t *timer) {
   char *func_name = (char *)timer->user_data;
 
-  if (func_name != NULL && js != NULL) {  // Construct a snippet of JavaScript to call the function, e.g., "my_func();"
+  if (func_name != NULL && js != NULL) {
+    // Check memory before executing JS - skip if critically low to prevent crash
+    size_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap < 15000) {
+      static uint32_t lastWarning = 0;
+      uint32_t now = millis();
+      if (now - lastWarning > 5000) {  // Warn every 5 seconds max
+        LOGF("[TIMER CB] WARNING: Low memory (%u bytes), skipping JS callback '%s'\n", freeHeap, func_name);
+        lastWarning = now;
+      }
+      return;
+    }
+
+    // Construct a snippet of JavaScript to call the function, e.g., "my_func();"
     char snippet[64];
     snprintf(snippet, sizeof(snippet), "%s();", func_name);
 
@@ -1039,14 +1052,11 @@ static jsval_t js_label_set_text(struct js *js, jsval_t *args, int nargs) {
     return js_mknull();
   }
 
-  // Convert to an Arduino String so we can trim quotes.
-  String txt(rawText);
-
-  // If the string starts and ends with " and is longer than 1 char,
-  // remove those outer quotes.
-  if (txt.startsWith("\"") && txt.endsWith("\"") && txt.length() > 1) {
-    txt.remove(0, 1);                 // remove leading "
-    txt.remove(txt.length() - 1, 1);  // remove trailing "
+  // Check memory before doing anything - fail early if critically low
+  size_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap < 8000) {
+    LOGF("label_set_text: CRITICAL - memory too low (%u bytes), skipping\n", freeHeap);
+    return js_mknull();
   }
 
   // Retrieve the lv_obj_t* from the handle
@@ -1056,14 +1066,29 @@ static jsval_t js_label_set_text(struct js *js, jsval_t *args, int nargs) {
     return js_mknull();
   }
 
-  // Check if we have enough free heap before allocating
-  size_t freeHeap = ESP.getFreeHeap();
-  if (freeHeap < 10000) {
-    LOGF("label_set_text: WARNING - low memory (%u bytes free)\n", freeHeap);
+  // Use static buffer to avoid heap allocation - max 256 chars
+  static char textBuffer[256];
+  size_t rawLen = strlen(rawText);
+
+  // Strip surrounding quotes if present, using C-style operations
+  const char *start = rawText;
+  size_t len = rawLen;
+
+  if (rawLen >= 2 && rawText[0] == '"' && rawText[rawLen - 1] == '"') {
+    start = rawText + 1;
+    len = rawLen - 2;
   }
 
-  // Finally set the text (now without extra quotes)
-  lv_label_set_text(label, txt.c_str());
+  // Clamp to buffer size
+  if (len >= sizeof(textBuffer)) {
+    len = sizeof(textBuffer) - 1;
+  }
+
+  memcpy(textBuffer, start, len);
+  textBuffer[len] = '\0';
+
+  // Set the text
+  lv_label_set_text(label, textBuffer);
   return js_mknull();
 }
 
@@ -1108,7 +1133,7 @@ static jsval_t js_create_style(struct js *js, jsval_t *args, int nargs) {
       lv_style_t *st = new lv_style_t;
       lv_style_init(st);
       g_style_map[i] = st;
-      LOGF("create_style => handle %d\n", i);
+      // Style created with handle i
       return js_mknum(i);
     }
   }
@@ -2284,8 +2309,6 @@ static jsval_t js_parse_json_value(struct js *js, jsval_t *args, int nargs) {
   }
   String jsonStr(jsonStr_cstr, json_len);
 
-  LOGF("js_parse_json_value: Retrieved JSON string (%d bytes): %s\n", json_len, jsonStr.c_str());
-
   // Retrieve key string
   size_t key_len;
   char *key_cstr = js_getstr(js, args[1], &key_len);
@@ -2295,42 +2318,32 @@ static jsval_t js_parse_json_value(struct js *js, jsval_t *args, int nargs) {
   }
   String keyStr(key_cstr, key_len);
 
-  LOGF("js_parse_json_value: Retrieved key string (%d bytes): %s\n", key_len, keyStr.c_str());
-
   // Strip surrounding quotes if present
   if (keyStr.startsWith("\"") && keyStr.endsWith("\"") && keyStr.length() >= 2) {
     keyStr = keyStr.substring(1, keyStr.length() - 1);
-    LOGF("js_parse_json_value: Stripped quotes from key. New key: '%s'\n", keyStr.c_str());
   }
 
   // Parse JSON using ArduinoJson
   StaticJsonDocument<1024> doc;  // Adjust size as needed
   DeserializationError error = deserializeJson(doc, jsonStr);
   if (error) {
-    Serial.print("js_parse_json_value: JSON parse failed: ");
-    LOG(error.c_str());
+    LOGF("parse_json_value: JSON parse failed: %s\n", error.c_str());
     return js_mkstr(js, "", 0);
   }
 
   // Check if JSON is an object
   if (!doc.is<JsonObject>()) {
-    LOG("js_parse_json_value: Parsed JSON is not an object");
+    LOG("parse_json_value: JSON is not an object");
     return js_mkstr(js, "", 0);
   }
 
-  LOG("js_parse_json_value: Parsed JSON keys and values:");
   JsonObject obj = doc.as<JsonObject>();
-  for (JsonPair kv : obj) {
-    String valStr = kv.value().as<String>();
-    LOGF("Key: %s, Value: %s\n", kv.key().c_str(), valStr.c_str());
-  }
 
   // Extract the value
   JsonVariant value = obj[keyStr.c_str()];
 
   // Check if the key exists
   if (value.isNull()) {
-    LOGF("js_parse_json_value: Key '%s' not found or null\n", keyStr.c_str());
     return js_mkstr(js, "", 0);
   }
 
@@ -2345,8 +2358,6 @@ static jsval_t js_parse_json_value(struct js *js, jsval_t *args, int nargs) {
   } else {  // For other types, attempt to stringify
     resultStr = String(value.as<String>());
   }
-
-  LOGF("js_parse_json_value: Extracted '%s': %s\n", keyStr.c_str(), resultStr.c_str());
 
   // Return the extracted value to JavaScript
   return js_mkstr(js, resultStr.c_str(), resultStr.length());
@@ -2377,28 +2388,15 @@ static jsval_t js_str_index_of(struct js *js, jsval_t *args, int nargs) {
   }
   String needleStr(needle_cstr, needle_len);
 
-  LOGF("str_index_of: Retrieved haystack ('%s') and needle ('%s')\n", haystackStr.c_str(), needleStr.c_str());
-
+  // Strip surrounding quotes if present
   if (haystackStr.startsWith("\"") && haystackStr.endsWith("\"") && haystackStr.length() >= 2) {
     haystackStr = haystackStr.substring(1, haystackStr.length() - 1);
-    LOGF("str_index_of: Stripped quotes from haystack. New haystack: '%s'\n", haystackStr.c_str());
   }
-
   if (needleStr.startsWith("\"") && needleStr.endsWith("\"") && needleStr.length() >= 2) {
     needleStr = needleStr.substring(1, needleStr.length() - 1);
-    LOGF("str_index_of: Stripped quotes from needle. New needle: '%s'\n", needleStr.c_str());
   }
 
-  LOGF("str_index_of: Searching for '%s' in '%s'\n", needleStr.c_str(), haystackStr.c_str());
-
-  int index = haystackStr.indexOf(needleStr);
-  if (index == -1) {
-    LOG("str_index_of: Needle not found");
-    return js_mknum(-1);
-  }
-
-  LOGF("str_index_of: Found at index %d\n", index);
-  return js_mknum(index);
+  return js_mknum(haystackStr.indexOf(needleStr));
 }
 
 // Bridging function to perform string substring extraction
@@ -2427,11 +2425,9 @@ static jsval_t js_str_substring(struct js *js, jsval_t *args, int nargs) {
   int start = (int)js_getnum(args[1]);
   int length = (int)js_getnum(args[2]);
 
-  LOGF("str_substring: Retrieved string ('%s'), start (%d), length (%d)\n", strStr.c_str(), start, length);
-
+  // Strip surrounding quotes if present
   if (strStr.startsWith("\"") && strStr.endsWith("\"") && strStr.length() >= 2) {
     strStr = strStr.substring(1, strStr.length() - 1);
-    LOGF("str_substring: Stripped quotes from string. New string: '%s'\n", strStr.c_str());
   }
 
   // Handle negative length (extract until end)
@@ -2439,13 +2435,12 @@ static jsval_t js_str_substring(struct js *js, jsval_t *args, int nargs) {
     strStr = strStr.substring(start);
   } else {  // Ensure that start + length does not exceed string length
     int end = start + length;
-    if (end > strStr.length()) {
+    if (end > (int)strStr.length()) {
       end = strStr.length();
     }
     strStr = strStr.substring(start, end);
   }
 
-  LOGF("str_substring: Extracted substring '%s' with length %d\n", strStr.c_str(), length);
   return js_mkstr(js, strStr.c_str(), strStr.length());
 }
 static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
@@ -2467,86 +2462,84 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
   const String HTTPS_PREFIX = "https://";
   const String HTTP_PREFIX = "http://";
 
+  String urlWithoutPrefix = url;
   if (url.startsWith(HTTPS_PREFIX)) {
-    url.remove(0, HTTPS_PREFIX.length());
+    urlWithoutPrefix = url.substring(HTTPS_PREFIX.length());
     useSSL = true;
-    LOG("js_http_get => Using HTTPS");
   } else if (url.startsWith(HTTP_PREFIX)) {
-    url.remove(0, HTTP_PREFIX.length());
+    urlWithoutPrefix = url.substring(HTTP_PREFIX.length());
     useSSL = false;
-    LOG("js_http_get => Using HTTP");
   } else {
     useSSL = true;
-    LOG("js_http_get => No prefix, assuming HTTPS");
   }
 
-  int slashPos = url.indexOf('/');
+  int slashPos = urlWithoutPrefix.indexOf('/');
   String host, path;
   if (slashPos < 0) {
-    host = url;
+    host = urlWithoutPrefix;
     path = "/";
   } else {
-    host = url.substring(0, slashPos);
-    path = url.substring(slashPos);
+    host = urlWithoutPrefix.substring(0, slashPos);
+    path = urlWithoutPrefix.substring(slashPos);
   }
-
-  LOG("Parsed host='" + host + "', path='" + path + "'");
 
   String response;
+  const int MAX_RETRIES = 2;  // Retry once on empty response
 
-  if (useSSL) {
-    WiFiClientSecure client;
-    if (g_httpCAcert) {
-      client.setCACert(g_httpCAcert);
-      LOG("Using user-supplied CA cert");
+  for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      vTaskDelay(pdMS_TO_TICKS(500));  // Wait before retry
+    }
+
+    if (useSSL) {
+      WiFiClientSecure client;
+      if (g_httpCAcert) {
+        client.setCACert(g_httpCAcert);
+      } else {
+        client.setInsecure();
+      }
+
+      if (!client.connect(host.c_str(), 443)) {
+        continue;  // Retry
+      }
+
+      client.print(String("GET ") + path + " HTTP/1.1\r\n");
+      client.print(String("Host: ") + host + "\r\n");
+      for (auto &hdr : g_http_headers) {
+        client.print(hdr.first);
+        client.print(": ");
+        client.print(hdr.second);
+        client.print("\r\n");
+      }
+      client.print("Connection: close\r\n\r\n");
+
+      response = readHttpResponseBody(client);
+      client.stop();
     } else {
-      client.setInsecure();
-      LOG("No CA cert => setInsecure()");
+      WiFiClient client;
+      if (!client.connect(host.c_str(), 80)) {
+        continue;  // Retry
+      }
+
+      client.print(String("GET ") + path + " HTTP/1.1\r\n");
+      client.print(String("Host: ") + host + "\r\n");
+      for (auto &hdr : g_http_headers) {
+        client.print(hdr.first);
+        client.print(": ");
+        client.print(hdr.second);
+        client.print("\r\n");
+      }
+      client.print("Connection: close\r\n\r\n");
+
+      response = readHttpResponseBody(client);
+      client.stop();
     }
 
-    LOGF("Connecting to '%s':443...\n", host.c_str());
-    if (!client.connect(host.c_str(), 443)) {
-      LOG("Connection failed!");
-      return js_mkstr(js, "", 0);
+    // If we got a response, break out of retry loop
+    if (response.length() > 0) {
+      break;
     }
-    LOG("Connected => sending GET request");
-
-    client.print(String("GET ") + path + " HTTP/1.1\r\n");
-    client.print(String("Host: ") + host + "\r\n");
-    for (auto &hdr : g_http_headers) {
-      client.print(hdr.first);
-      client.print(": ");
-      client.print(hdr.second);
-      client.print("\r\n");
-    }
-    client.print("Connection: close\r\n\r\n");
-
-    response = readHttpResponseBody(client);
-    client.stop();
-  } else {
-    WiFiClient client;
-    LOGF("Connecting to '%s':80...\n", host.c_str());
-    if (!client.connect(host.c_str(), 80)) {
-      LOG("Connection failed!");
-      return js_mkstr(js, "", 0);
-    }
-    LOG("Connected => sending GET request");
-
-    client.print(String("GET ") + path + " HTTP/1.1\r\n");
-    client.print(String("Host: ") + host + "\r\n");
-    for (auto &hdr : g_http_headers) {
-      client.print(hdr.first);
-      client.print(": ");
-      client.print(hdr.second);
-      client.print("\r\n");
-    }
-    client.print("Connection: close\r\n\r\n");
-
-    response = readHttpResponseBody(client);
-    client.stop();
   }
-
-  LOGF("Done reading. response size=%d\n", response.length());
 
   return js_mkstr(js, response.c_str(), response.length());
 }
