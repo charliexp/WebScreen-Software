@@ -341,6 +341,11 @@ bool webscreen_runtime_init_javascript_engine(void) {
     WEBSCREEN_DEBUG_PRINTLN("Failed to initialize Elk JavaScript engine");
     return false;
   }
+
+  // Set aggressive GC threshold to trigger garbage collection more often
+  // This helps prevent memory fragmentation during long-running scripts
+  js_setgct(js, sizeof(elk_memory) / 4);  // Trigger GC when 25% of heap is used
+
   webscreen_runtime_register_js_functions();
 
   g_js_engine_initialized = true;

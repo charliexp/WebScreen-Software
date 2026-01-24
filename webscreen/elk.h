@@ -43,6 +43,8 @@ extern "C" {
 
   void js_setgct(struct js *, size_t);  // Set GC trigger threshold
 
+  void js_gc(struct js *);  // Force garbage collection
+
   void js_stats(struct js *, size_t *total, size_t *min, size_t *cstacksize);
 
   void js_dump(struct js *);  // Print debug info. Requires -DJS_DUMP

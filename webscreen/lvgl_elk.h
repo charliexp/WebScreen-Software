@@ -44,7 +44,7 @@ static unsigned long lastWiFiReconnectAttempt = 0;
 /******************************************************************************
  * A) Elk Memory + Global Instances
  ******************************************************************************/
-#define ELK_HEAP_BYTES (64 * 1024)  // Increased from 48KB to 64KB for larger scripts
+#define ELK_HEAP_BYTES (96 * 1024)  // Increased to 96KB for better long-term stability
 static uint8_t elk_memory[ELK_HEAP_BYTES];
 struct js *js = NULL;  // Global Elk instance
 // Adjust as needed
@@ -378,21 +378,50 @@ static jsval_t js_delay(struct js *js, jsval_t *args, int nargs) {
 
 // LVGL Timer Bridging Functions
 
+// Execution counter for periodic maintenance
+static uint32_t g_timer_exec_count = 0;
+static const uint32_t GC_INTERVAL = 60;  // Run GC every 60 timer callbacks
+static const uint32_t REBOOT_THRESHOLD = 36000;  // Reboot after ~10 hours (36000 seconds)
+
 // This C++ function will be the callback for LVGL. It will execute a JS function.
 static void elk_timer_cb(lv_timer_t *timer) {
   char *func_name = (char *)timer->user_data;
 
   if (func_name != NULL && js != NULL) {
+    g_timer_exec_count++;
+
     // Check memory before executing JS - skip if critically low to prevent crash
     size_t freeHeap = ESP.getFreeHeap();
-    if (freeHeap < 15000) {
+    if (freeHeap < 20000) {
       static uint32_t lastWarning = 0;
       uint32_t now = millis();
       if (now - lastWarning > 5000) {  // Warn every 5 seconds max
-        LOGF("[TIMER CB] WARNING: Low memory (%u bytes), skipping JS callback '%s'\n", freeHeap, func_name);
+        LOGF("[TIMER CB] WARNING: Low memory (%u bytes), triggering GC\n", freeHeap);
         lastWarning = now;
       }
+      // Force garbage collection
+      js_gc(js);
+
+      // Check again after GC
+      freeHeap = ESP.getFreeHeap();
+      if (freeHeap < 15000) {
+        LOGF("[TIMER CB] CRITICAL: Memory still low (%u bytes) after GC, rebooting...\n", freeHeap);
+        delay(1000);
+        ESP.restart();
+      }
       return;
+    }
+
+    // Periodic garbage collection to prevent fragmentation
+    if (g_timer_exec_count % GC_INTERVAL == 0) {
+      js_gc(js);
+    }
+
+    // Safety reboot after very long runtime to prevent memory issues
+    if (g_timer_exec_count >= REBOOT_THRESHOLD) {
+      LOG("[TIMER CB] Scheduled maintenance reboot after long runtime");
+      delay(1000);
+      ESP.restart();
     }
 
     // Construct a snippet of JavaScript to call the function, e.g., "my_func();"
@@ -403,6 +432,13 @@ static void elk_timer_cb(lv_timer_t *timer) {
     jsval_t res = js_eval(js, snippet, strlen(snippet));
     if (js_type(res) == JS_ERR) {
       LOGF("[TIMER CB] Error executing JS function '%s': %s\n", func_name, js_str(js, res));
+      // If we get a parse error, memory might be corrupted - reboot
+      const char* errStr = js_str(js, res);
+      if (errStr && strstr(errStr, "expected")) {
+        LOG("[TIMER CB] Parse error detected, memory may be corrupted - rebooting");
+        delay(1000);
+        ESP.restart();
+      }
     }
   }
 }
