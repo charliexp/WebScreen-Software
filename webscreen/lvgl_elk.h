@@ -2245,7 +2245,7 @@ String readHttpResponseBody(WiFiClient &client) {
   int contentLength = -1;
 
   // Read headers - check both connected and available for robustness
-  unsigned long timeout = millis() + 10000;  // 10 second timeout
+  unsigned long timeout = millis() + 15000;  // 15 second timeout
   while ((client.connected() || client.available()) && millis() < timeout) {
     if (!client.available()) {
       vTaskDelay(pdMS_TO_TICKS(10));
@@ -2272,7 +2272,7 @@ String readHttpResponseBody(WiFiClient &client) {
   }
 
   if (chunked) {
-    timeout = millis() + 10000;
+    timeout = millis() + 15000;
     while (millis() < timeout) {
       // Read chunk size
       String sizeLine = client.readStringUntil('\n');
@@ -2301,7 +2301,7 @@ String readHttpResponseBody(WiFiClient &client) {
     // Use Content-Length to read exact number of bytes
     body.reserve(contentLength);
     int bytesRead = 0;
-    timeout = millis() + 10000;
+    timeout = millis() + 15000;
     while (bytesRead < contentLength && millis() < timeout) {
       if (client.available()) {
         char c = client.read();
@@ -2315,7 +2315,7 @@ String readHttpResponseBody(WiFiClient &client) {
     }
   } else {
     // No Content-Length, read until connection closes
-    timeout = millis() + 10000;
+    timeout = millis() + 15000;
     while ((client.connected() || client.available()) && millis() < timeout) {
       if (client.available()) {
         char c = client.read();
@@ -2520,22 +2520,25 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
   }
 
   String response;
-  const int MAX_RETRIES = 2;  // Retry once on empty response
+  const int MAX_RETRIES = 3;  // Up to 4 attempts total
 
   for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
-      vTaskDelay(pdMS_TO_TICKS(500));  // Wait before retry
+      // Exponential backoff: 1s, 2s, 4s between retries
+      int delayMs = 1000 * (1 << (attempt - 1));
+      vTaskDelay(pdMS_TO_TICKS(delayMs));
     }
 
     if (useSSL) {
       WiFiClientSecure client;
+      client.setTimeout(15000);  // 15 second timeout for read/write operations
       if (g_httpCAcert) {
         client.setCACert(g_httpCAcert);
       } else {
         client.setInsecure();
       }
 
-      if (!client.connect(host.c_str(), 443)) {
+      if (!client.connect(host.c_str(), 443, 10000)) {  // 10 second connection timeout
         continue;  // Retry
       }
 
@@ -2553,7 +2556,8 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
       client.stop();
     } else {
       WiFiClient client;
-      if (!client.connect(host.c_str(), 80)) {
+      client.setTimeout(15000);  // 15 second timeout for read/write operations
+      if (!client.connect(host.c_str(), 80, 10000)) {  // 10 second connection timeout
         continue;  // Retry
       }
 
