@@ -16,7 +16,7 @@
 #define WEBSCREEN_VERSION_MAJOR 2
 #define WEBSCREEN_VERSION_MINOR 0
 #define WEBSCREEN_VERSION_PATCH 0
-#define WEBSCREEN_VERSION_STRING "0.2.2-dev"
+#define WEBSCREEN_VERSION_STRING "2.0.2"
 
 // ============================================================================
 // HARDWARE CONFIGURATION
