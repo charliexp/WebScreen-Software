@@ -28,13 +28,16 @@ The following functions are available in your JavaScript applications:
 
 ### Core Functions
 
-- **print(message)**  
+- **print(message)**
   Print a message to the serial console for debugging.
-  
-- **delay(milliseconds)**  
+
+- **mem_stats()**
+  Print memory statistics (ESP32 heap and LVGL memory usage) to the serial console. Returns the free heap size in bytes. Useful for debugging memory issues.
+
+- **delay(milliseconds)**
   Pause execution for the specified number of milliseconds.
 
-- **create_timer()**  
+- **create_timer()**
   Create a timer object for periodic execution.
 
 ### String Utilities
@@ -135,8 +138,8 @@ The following functions are available in your JavaScript applications:
 - **draw_label(text, x, y)**  
   Draw a simple text label at the specified coordinates.
 
-- **draw_rect(x, y, width, height, color)**  
-  Draw a rectangle with the specified dimensions and color.
+- **draw_rect(x, y, width, height [, color])**
+  Draw a rectangle with the specified dimensions. Color is optional (defaults to green 0x00ff00). Returns a handle that can be used with `move_obj()`, `rotate_obj()`, etc.
 
 - **show_image(filepath, x, y)**  
   Display an image from SD card at the specified position.

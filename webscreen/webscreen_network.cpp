@@ -29,21 +29,32 @@ bool webscreen_network_init(const webscreen_config_t* config) {
   }
 
   WEBSCREEN_DEBUG_PRINTLN("Initializing network...");
-  g_wifi_ssid = config->wifi.ssid;
-  g_wifi_password = config->wifi.password;
   g_wifi_auto_reconnect = config->wifi.auto_reconnect;
 
-  if (!config->wifi.enabled || g_wifi_ssid.length() == 0) {
-    WEBSCREEN_DEBUG_PRINTLN("WiFi disabled or no SSID configured");
+  if (!config->wifi.enabled) {
+    WEBSCREEN_DEBUG_PRINTLN("WiFi disabled");
     return false;
   }
+
+  if (strlen(config->wifi.ssid) == 0) {
+    WEBSCREEN_DEBUG_PRINTLN("No WiFi SSID configured");
+    return false;
+  }
+
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(g_wifi_auto_reconnect);
+
+  WEBSCREEN_DEBUG_PRINTF("Connecting to: %s\n", config->wifi.ssid);
+  g_wifi_ssid = config->wifi.ssid;
+  g_wifi_password = config->wifi.password;
+
   if (!webscreen_wifi_connect(g_wifi_ssid.c_str(), g_wifi_password.c_str(),
                               config->wifi.connection_timeout)) {
-    WEBSCREEN_DEBUG_PRINTLN("Initial WiFi connection failed");
+    WEBSCREEN_DEBUG_PRINTLN("WiFi connection failed");
     return false;
   }
+
+  WEBSCREEN_DEBUG_PRINTF("Successfully connected to: %s\n", g_wifi_ssid.c_str());
   g_http_client.setTimeout(WEBSCREEN_HTTP_TIMEOUT_MS);
 
 #if WEBSCREEN_ENABLE_MQTT

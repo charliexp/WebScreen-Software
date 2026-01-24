@@ -15,7 +15,7 @@ extern "C" {
 static bool g_javascript_active = false;
 static bool g_fallback_active = false;
 static String g_current_script_file = "";
-static String g_fallback_text = "WebScreen v2.0\nFallback Mode\nSD card or script not found";
+static String g_fallback_text = "WebScreen v" WEBSCREEN_VERSION_STRING "\nFallback Mode\nSD card or script not found";
 static String g_last_error = "";
 static uint32_t g_runtime_start_time = 0;
 static bool g_lvgl_initialized = false;
@@ -382,7 +382,7 @@ bool webscreen_runtime_start_javascript_task(void) {
   BaseType_t result = xTaskCreatePinnedToCore(
     webscreen_runtime_javascript_task,
     "WebScreenJS",
-    16384,  // Stack size
+    24576,  // Stack size - increased from 16KB to 24KB for complex JS operations
     NULL,   // Parameters
     1,      // Priority
     &g_js_task_handle,
@@ -403,7 +403,9 @@ void webscreen_runtime_javascript_task(void* pvParameters) {
   if (js && g_js_script_content.length() > 0) {
     jsval_t result = js_eval(js, g_js_script_content.c_str(), g_js_script_content.length());
     if (js_type(result) == JS_ERR) {
-      WEBSCREEN_DEBUG_PRINTLN("JavaScript execution error");
+      const char *error = js_str(js, result);
+      WEBSCREEN_DEBUG_PRINT("JavaScript execution error: ");
+      WEBSCREEN_DEBUG_PRINTLN(error ? error : "unknown error");
     } else {
       WEBSCREEN_DEBUG_PRINTLN("JavaScript script executed successfully");
     }
