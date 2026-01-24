@@ -44,9 +44,37 @@ static unsigned long lastWiFiReconnectAttempt = 0;
 /******************************************************************************
  * A) Elk Memory + Global Instances
  ******************************************************************************/
-#define ELK_HEAP_BYTES (96 * 1024)  // Increased to 96KB for better long-term stability
-static uint8_t elk_memory[ELK_HEAP_BYTES];
+#define ELK_HEAP_BYTES (256 * 1024)  // 256KB in PSRAM for complex scripts
+static uint8_t *elk_memory = NULL;
+static size_t elk_memory_size = 0;
 struct js *js = NULL;  // Global Elk instance
+
+// Initialize Elk memory from PSRAM (must be called before js_create)
+static bool init_elk_memory() {
+  if (elk_memory != NULL) {
+    return true;  // Already initialized
+  }
+
+  // Try to allocate from PSRAM first
+  elk_memory = (uint8_t*)ps_malloc(ELK_HEAP_BYTES);
+  if (elk_memory != NULL) {
+    elk_memory_size = ELK_HEAP_BYTES;
+    LOGF("Elk heap allocated in PSRAM: %u KB\n", ELK_HEAP_BYTES / 1024);
+    return true;
+  }
+
+  // Fallback to regular heap with smaller size
+  size_t fallback_size = 96 * 1024;
+  elk_memory = (uint8_t*)malloc(fallback_size);
+  if (elk_memory != NULL) {
+    elk_memory_size = fallback_size;
+    LOGF("Elk heap allocated in RAM (fallback): %u KB\n", fallback_size / 1024);
+    return true;
+  }
+
+  LOG("ERROR: Failed to allocate Elk heap!");
+  return false;
+}
 // Adjust as needed
 #define MAX_RAM_IMAGES 16
 
@@ -3272,7 +3300,14 @@ void register_js_functions() {
 // K) The elk_task -- runs Elk + bridging in a separate FreeRTOS task
 
 static void elk_task(void *pvParam) {
-  js = js_create(elk_memory, sizeof(elk_memory));
+  // Initialize Elk memory from PSRAM
+  if (!init_elk_memory()) {
+    LOG("Failed to allocate Elk memory in elk_task");
+    vTaskDelete(NULL);
+    return;
+  }
+
+  js = js_create(elk_memory, elk_memory_size);
   if (!js) {
     LOG("Failed to initialize Elk in elk_task");
     // Delete this task if you want

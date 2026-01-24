@@ -21,7 +21,9 @@ static uint32_t g_runtime_start_time = 0;
 static bool g_lvgl_initialized = false;
 
 extern struct js* js;
-extern uint8_t elk_memory[];
+extern uint8_t *elk_memory;
+extern size_t elk_memory_size;
+extern bool init_elk_memory();
 static TaskHandle_t g_js_task_handle = NULL;
 static bool g_js_engine_initialized = false;
 static String g_js_script_content = "";
@@ -336,7 +338,14 @@ bool webscreen_runtime_init_javascript_engine(void) {
   }
 
   WEBSCREEN_DEBUG_PRINTLN("Initializing Elk JavaScript engine...");
-  js = js_create(elk_memory, sizeof(elk_memory));
+
+  // Initialize Elk memory from PSRAM
+  if (!init_elk_memory()) {
+    WEBSCREEN_DEBUG_PRINTLN("Failed to allocate Elk memory");
+    return false;
+  }
+
+  js = js_create(elk_memory, elk_memory_size);
   if (!js) {
     WEBSCREEN_DEBUG_PRINTLN("Failed to initialize Elk JavaScript engine");
     return false;
@@ -344,7 +353,7 @@ bool webscreen_runtime_init_javascript_engine(void) {
 
   // Set aggressive GC threshold to trigger garbage collection more often
   // This helps prevent memory fragmentation during long-running scripts
-  js_setgct(js, sizeof(elk_memory) / 4);  // Trigger GC when 25% of heap is used
+  js_setgct(js, elk_memory_size / 4);  // Trigger GC when 25% of heap is used
 
   webscreen_runtime_register_js_functions();
 
