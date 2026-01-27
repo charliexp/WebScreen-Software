@@ -88,14 +88,16 @@ This is the easiest way to get started with WebScreen without any development se
    ```
    cp WebScreen-Software/lv_conf.h ~/Arduino/libraries/
    ```
-   
+
    Key LVGL settings configured for WebScreen:
    - Color depth: 16-bit (RGB565) with byte swap enabled
    - Custom memory management using stdlib malloc/free
    - Display refresh: 30ms for stability
-   - GIF support enabled
+   - **Enabled fonts**: Montserrat 14, 20, 28, 34, 40, 44, 48
+   - **Image formats**: PNG, GIF, SJPG (BMP disabled)
+   - **Widgets**: Label, Image, Arc, Line, Button, Chart, Meter, Span
+   - **Layouts**: Flexbox and Grid enabled
    - Complex drawing features enabled (shadows, gradients, etc.)
-   - Montserrat 14pt font enabled
 
 5. **Open WebScreen Sketch**
    ```
@@ -301,19 +303,38 @@ WebScreen features a modular architecture with clear separation of concerns:
 #### LVGL Configuration
 WebScreen includes a custom `lv_conf.h` file optimized for ESP32-S3 with AMOLED display:
 
-**Key Configuration Settings:**
+**Display Settings:**
 - **Color Format**: 16-bit RGB565 with byte swapping for SPI compatibility
-- **Memory Management**: Custom malloc/free using ESP32 heap allocator
-- **Display Refresh**: 30ms refresh rate for stable display output
-- **Graphics Features**: Complex drawing enabled (gradients, shadows, anti-aliasing)
-- **File System**: GIF animation support enabled
-- **Fonts**: Montserrat 14pt as default UI font
+- **Resolution**: 536x240 pixels
+- **DPI**: 130 for optimal widget sizing
+- **Refresh Rate**: 30ms for stable display output
+
+**Available Fonts (Montserrat):**
+| Size | Usage |
+|------|-------|
+| 14 | Default, small text |
+| 20 | Body text |
+| 28 | Subheadings |
+| 34 | Medium headings |
+| 40 | Large headings |
+| 44 | Extra large |
+| 48 | Display text |
+
+**Note:** Other font sizes (8, 10, 12, 16, 18, 22, 24, etc.) are NOT available.
+
+**Enabled Widgets:**
+- **Core**: Label, Image, Arc, Line, Button, Button Matrix, Canvas
+- **Extra**: Chart, Meter, Message Box, Span (rich text)
+- **Layouts**: Flexbox and Grid
+
+**Supported Image Formats:**
+- PNG ✅, GIF ✅, SJPG ✅, BMP ❌
 
 **Performance Optimizations:**
 - Image caching disabled to save RAM
 - Gradient caching disabled to reduce memory usage
 - Shadow caching disabled for predictable memory consumption
-- DPI set to 130 for optimal widget sizing on AMOLED display
+- Memory management uses ESP32 heap allocator
 
 #### Debug Build
 To enable debug mode, uncomment this line in `webscreen/webscreen_config.h`:
@@ -424,7 +445,7 @@ Serial.printf("FPS: %d, Memory: %d KB\n", stats.last_fps, stats.memory_used/1024
 The firmware exposes numerous functions to your JavaScript applications. Some highlights include:
 - **Basic:** `print()`, `delay()`
 - **Wi‑Fi:** `wifi_connect()`, `wifi_status()`, `wifi_get_ip()`
-- **HTTP:** `http_get()`, `http_post()`, `http_delete()`, `http_set_ca_cert_from_sd()`, `parse_json_value()`
+- **HTTP:** `http_get()`, `http_post()`, `http_delete()` (all support custom ports like `http://host:port/path`), `http_set_ca_cert_from_sd()`, `parse_json_value()`
 - **SD Card:** `sd_read_file()`, `sd_write_file()`, `sd_list_dir()`, `sd_delete_file()`
 - **BLE:** `ble_init()`, `ble_is_connected()`, `ble_write()`
 - **UI Drawing:** `draw_label()`, `draw_rect()`, `show_image()`, `create_label()`, `label_set_text()`

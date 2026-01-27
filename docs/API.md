@@ -67,25 +67,38 @@ The following functions are available in your JavaScript applications:
 
 ### HTTP Functions
 
-- **http_get(url)**  
+- **http_get(url)**
   Perform an HTTP GET request to the specified URL. Returns the response body.
+  Supports both HTTP and HTTPS, with custom ports.
+  ```javascript
+  // Standard ports
+  http_get("http://example.com/api")       // port 80
+  http_get("https://example.com/api")      // port 443
 
-- **http_post(url, data)**  
-  Perform an HTTP POST request with the given data.
+  // Custom ports
+  http_get("http://192.168.1.20:2000/api")
+  http_get("https://myserver.com:8443/api")
+  ```
 
-- **http_delete(url)**  
-  Perform an HTTP DELETE request.
+- **http_post(url, data)**
+  Perform an HTTP POST request with the given data. Supports HTTP/HTTPS and custom ports.
+  ```javascript
+  http_post("http://192.168.1.20:3000/api", '{"key":"value"}')
+  ```
 
-- **http_set_ca_cert_from_sd(certificate_path)**  
+- **http_delete(url)**
+  Perform an HTTP DELETE request. Supports HTTP/HTTPS and custom ports.
+
+- **http_set_ca_cert_from_sd(certificate_path)**
   Load a CA certificate from SD card for HTTPS requests.
 
-- **http_set_header(name, value)**  
+- **http_set_header(name, value)**
   Add a custom HTTP header for subsequent requests.
 
-- **http_clear_headers()**  
+- **http_clear_headers()**
   Clear all custom HTTP headers.
 
-- **parse_json_value(json_string, key)**  
+- **parse_json_value(json_string, key)**
   Parse a JSON string and extract the value for the specified key.
 
 ### SD Card Functions
@@ -144,17 +157,25 @@ The following functions are available in your JavaScript applications:
 - **show_image(filepath, x, y)**  
   Display an image from SD card at the specified position.
 
-- **show_gif_from_sd(filepath)**  
-  Display an animated GIF from SD card.
+- **show_gif_from_sd(filepath, x, y)**
+  Display an animated GIF from SD card at the specified position.
+  ```javascript
+  show_gif_from_sd("/animation.gif", 100, 50)
+  ```
+  **Note:** For best performance, keep GIFs under 50KB. Large animated GIFs may cause memory issues.
 
 ### LVGL Widget Functions
 
 #### Label Widgets
 
-- **create_label(parent)**  
-  Create a new label widget.
+- **create_label(x, y)**
+  Create a new label widget at the specified position.
+  ```javascript
+  let label = create_label(100, 50);
+  label_set_text(label, "Hello!");
+  ```
 
-- **label_set_text(label, text)**  
+- **label_set_text(label, text)**
   Set the text content of a label.
 
 #### Image Widgets
@@ -516,5 +537,145 @@ if (response === null || response === "") {
 - Minimize frequent file I/O operations
 - Cache frequently accessed data in variables
 - Use appropriate data types for memory efficiency
+
+## LVGL Configuration
+
+WebScreen uses LVGL v8.3 with the following configuration:
+
+### Display Settings
+- **Color Depth**: 16-bit (RGB565)
+- **DPI**: 130
+- **Refresh Period**: 30ms
+
+### Available Fonts
+
+The following Montserrat font sizes are enabled:
+
+| Size | Constant | Usage |
+|------|----------|-------|
+| 14 | `14` | Default font, small text |
+| 20 | `20` | Body text |
+| 28 | `28` | Subheadings |
+| 34 | `34` | Medium headings |
+| 40 | `40` | Large headings |
+| 44 | `44` | Extra large |
+| 48 | `48` | Display text |
+
+```javascript
+// Example: Set font size
+style_set_text_font(style, 48);  // Use largest font
+style_set_text_font(style, 14);  // Use smallest/default font
+```
+
+**Note:** Only these specific sizes are available. Using other sizes (e.g., 16, 24, 32) will not work.
+
+### Enabled Widgets
+
+| Widget | Status | Notes |
+|--------|--------|-------|
+| Arc | ✅ Enabled | Circular progress/gauge |
+| Button | ✅ Enabled | Clickable buttons |
+| Button Matrix | ✅ Enabled | Grid of buttons |
+| Canvas | ✅ Enabled | Custom drawing |
+| Image | ✅ Enabled | Display images |
+| Label | ✅ Enabled | Text display |
+| Line | ✅ Enabled | Line drawing |
+| Chart | ✅ Enabled | Data visualization |
+| Meter | ✅ Enabled | Gauge/speedometer |
+| Message Box | ✅ Enabled | Popup dialogs |
+| Span | ✅ Enabled | Rich text |
+
+### Disabled Widgets
+
+The following widgets are **not available** to save memory:
+- Bar, Slider, Switch
+- Checkbox, Dropdown, Roller
+- Textarea, Table
+- Calendar, Colorwheel
+- Keyboard, List, Menu
+- Spinbox, Spinner
+- Tabview, Tileview, Window
+
+### Supported Image Formats
+
+| Format | Status | Notes |
+|--------|--------|-------|
+| PNG | ✅ Enabled | Recommended for icons |
+| SJPG | ✅ Enabled | Split JPG for large images |
+| GIF | ✅ Enabled | Animated images |
+| BMP | ❌ Disabled | Not supported |
+
+### Layout Systems
+
+- **Flexbox** (`LV_USE_FLEX`): ✅ Enabled - CSS-like flexible layouts
+- **Grid** (`LV_USE_GRID`): ✅ Enabled - CSS-like grid layouts
+
+### Themes
+
+- **Default Theme**: ✅ Enabled (Dark mode)
+- **Basic Theme**: ✅ Enabled
+- **Mono Theme**: ✅ Enabled
+
+### Drawing Features
+
+- Complex drawing (shadows, gradients, rounded corners): ✅ Enabled
+- Text selection: ✅ Enabled
+- UTF-8 encoding: ✅ Enabled
+
+## Memory Guidelines
+
+WebScreen uses the Elk JavaScript engine with **256KB of heap memory** allocated in PSRAM. To ensure stable operation:
+
+### Script Size
+- Keep scripts under **3KB** for best stability
+- Larger scripts may work but consume more memory during parsing
+
+### Styles and Labels
+- Limit the number of styles to **5 or fewer** per app
+- Limit the number of labels to **10 or fewer** per app
+- Reuse styles across multiple labels when possible
+
+### GIF Animations
+- Keep GIFs under **50KB** for reliable playback
+- Use small dimensions (100x100 or less)
+- Reduce the number of frames and colors
+- Large GIFs (>100KB) may cause cache errors and crashes
+
+### Timer Callbacks
+- Use **one timer callback** when possible
+- Each additional timer consumes memory
+- Keep callback functions simple
+
+### Example: Memory-Efficient App
+```javascript
+"use strict";
+
+// Minimal styles (reuse where possible)
+let bigStyle = create_style();
+style_set_text_font(bigStyle, 48);
+style_set_text_color(bigStyle, 0xFFFFFF);
+style_set_text_align(bigStyle, 1);
+
+let smallStyle = create_style();
+style_set_text_font(smallStyle, 20);
+style_set_text_color(smallStyle, 0x888888);
+
+// Create labels
+let title = create_label(268, 80);
+obj_add_style(title, bigStyle, 0);
+label_set_text(title, "Hello");
+
+let subtitle = create_label(268, 140);
+obj_add_style(subtitle, smallStyle, 0);
+label_set_text(subtitle, "World");
+
+// Single timer callback
+let update = function() {
+  // Keep it simple
+  label_set_text(title, "Updated");
+};
+
+create_timer("update", 1000);
+```
 
 This API provides comprehensive access to WebScreen's hardware and software capabilities, enabling the creation of sophisticated embedded applications with rich user interfaces and network connectivity.

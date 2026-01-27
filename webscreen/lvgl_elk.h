@@ -2538,13 +2538,27 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
   }
 
   int slashPos = urlWithoutPrefix.indexOf('/');
-  String host, path;
+  String hostWithPort, path;
   if (slashPos < 0) {
-    host = urlWithoutPrefix;
+    hostWithPort = urlWithoutPrefix;
     path = "/";
   } else {
-    host = urlWithoutPrefix.substring(0, slashPos);
+    hostWithPort = urlWithoutPrefix.substring(0, slashPos);
     path = urlWithoutPrefix.substring(slashPos);
+  }
+
+  // Parse port from host (e.g., "192.168.1.20:2000" or "example.com:8080")
+  String host;
+  int port = useSSL ? 443 : 80;  // Default ports
+  int colonPos = hostWithPort.indexOf(':');
+  if (colonPos > 0) {
+    host = hostWithPort.substring(0, colonPos);
+    port = hostWithPort.substring(colonPos + 1).toInt();
+    if (port <= 0 || port > 65535) {
+      port = useSSL ? 443 : 80;  // Invalid port, use default
+    }
+  } else {
+    host = hostWithPort;
   }
 
   String response;
@@ -2566,7 +2580,7 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
         client.setInsecure();
       }
 
-      if (!client.connect(host.c_str(), 443, 10000)) {  // 10 second connection timeout
+      if (!client.connect(host.c_str(), port, 10000)) {  // 10 second connection timeout
         continue;  // Retry
       }
 
@@ -2585,7 +2599,7 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
     } else {
       WiFiClient client;
       client.setTimeout(15000);  // 15 second timeout for read/write operations
-      if (!client.connect(host.c_str(), 80, 10000)) {  // 10 second connection timeout
+      if (!client.connect(host.c_str(), port, 10000)) {  // 10 second connection timeout
         continue;  // Retry
       }
 
@@ -2632,73 +2646,98 @@ static jsval_t js_http_post(struct js *js, jsval_t *args, int nargs) {
     jsonBody.remove(jsonBody.length() - 1, 1);
   }
 
-  // We'll assume "https://"
+  // Determine if HTTPS or HTTP
+  bool useSSL = true;
   const String HTTPS_PREFIX = "https://";
+  const String HTTP_PREFIX = "http://";
   if (url.startsWith(HTTPS_PREFIX)) {
     url.remove(0, HTTPS_PREFIX.length());
+    useSSL = true;
+  } else if (url.startsWith(HTTP_PREFIX)) {
+    url.remove(0, HTTP_PREFIX.length());
+    useSSL = false;
   }
 
   // Find first slash => host + path
   int slashPos = url.indexOf('/');
-  String host, path;
+  String hostWithPort, path;
   if (slashPos < 0) {
-    host = url;
+    hostWithPort = url;
     path = "/";
   } else {
-    host = url.substring(0, slashPos);
+    hostWithPort = url.substring(0, slashPos);
     path = url.substring(slashPos);
+  }
+
+  // Parse port from host
+  String host;
+  int port = useSSL ? 443 : 80;
+  int colonPos = hostWithPort.indexOf(':');
+  if (colonPos > 0) {
+    host = hostWithPort.substring(0, colonPos);
+    port = hostWithPort.substring(colonPos + 1).toInt();
+    if (port <= 0 || port > 65535) {
+      port = useSSL ? 443 : 80;
+    }
+  } else {
+    host = hostWithPort;
   }
 
   LOG("\njs_http_post => manual approach");
   LOG("Host: " + host);
+  LOGF("Port: %d\n", port);
   LOG("Path: " + path);
   LOGF("Body length=%d\n", jsonBody.length());
 
-  // WiFiClientSecure
-  WiFiClientSecure client;
-  if (g_httpCAcert) {
-    client.setCACert(g_httpCAcert);
-    LOG("Using user-supplied CA cert (POST)");
+  String response;
+
+  if (useSSL) {
+    WiFiClientSecure client;
+    if (g_httpCAcert) {
+      client.setCACert(g_httpCAcert);
+    } else {
+      client.setInsecure();
+    }
+
+    if (!client.connect(host.c_str(), port)) {
+      LOG("Connection failed (POST)!");
+      return js_mkstr(js, "", 0);
+    }
+
+    client.print(String("POST ") + path + " HTTP/1.1\r\n");
+    client.print(String("Host: ") + host + "\r\n");
+    for (auto &hdr : g_http_headers) {
+      client.print(hdr.first + ": " + hdr.second + "\r\n");
+    }
+    client.print("Content-Type: application/json\r\n");
+    client.printf("Content-Length: %d\r\n", jsonBody.length());
+    client.print("Connection: close\r\n\r\n");
+    client.print(jsonBody);
+
+    response = readHttpResponseBody(client);
+    client.stop();
   } else {
-    client.setInsecure();
-    LOG("No CA => setInsecure() (POST)");
+    WiFiClient client;
+    if (!client.connect(host.c_str(), port)) {
+      LOG("Connection failed (POST)!");
+      return js_mkstr(js, "", 0);
+    }
+
+    client.print(String("POST ") + path + " HTTP/1.1\r\n");
+    client.print(String("Host: ") + host + "\r\n");
+    for (auto &hdr : g_http_headers) {
+      client.print(hdr.first + ": " + hdr.second + "\r\n");
+    }
+    client.print("Content-Type: application/json\r\n");
+    client.printf("Content-Length: %d\r\n", jsonBody.length());
+    client.print("Connection: close\r\n\r\n");
+    client.print(jsonBody);
+
+    response = readHttpResponseBody(client);
+    client.stop();
   }
-
-  // Connect on port 443
-  LOGF("Connecting to '%s':443...\n", host.c_str());
-  if (!client.connect(host.c_str(), 443)) {
-    LOG("Connection failed (POST)!");
-    return js_mkstr(js, "", 0);
-  }
-  LOG("Connected => sending POST request");
-
-  // Construct POST request
-  // e.g.:
-  // POST /path HTTP/1.1
-  // Content-Type: application/json
-  // Content-Length: ...
-
-  // {body}
-  client.print(String("POST ") + path + " HTTP/1.1\r\n");
-  client.print(String("Host: ") + host + "\r\n");
-
-  // If you want custom headers from g_http_headers, do:
-  // for(auto &hdr : g_http_headers) { ... }
-
-  client.print("Content-Type: application/json\r\n");
-  client.printf("Content-Length: %d\r\n", jsonBody.length());
-  client.print("Connection: close\r\n\r\n");
-
-  // Send body
-  client.print(jsonBody);
-
-  // Read entire response
-  String response = readHttpResponseBody(client);
-  client.stop();
 
   LOGF("Done POST. response size=%d\n", response.length());
-
-  // Return entire raw HTTP response
   return js_mkstr(js, response.c_str(), response.length());
 }
 
@@ -2715,63 +2754,92 @@ static jsval_t js_http_delete(struct js *js, jsval_t *args, int nargs) {
     url.remove(url.length() - 1, 1);
   }
 
-  // Assume https://
+  // Determine if HTTPS or HTTP
+  bool useSSL = true;
   const String HTTPS_PREFIX = "https://";
+  const String HTTP_PREFIX = "http://";
   if (url.startsWith(HTTPS_PREFIX)) {
     url.remove(0, HTTPS_PREFIX.length());
+    useSSL = true;
+  } else if (url.startsWith(HTTP_PREFIX)) {
+    url.remove(0, HTTP_PREFIX.length());
+    useSSL = false;
   }
 
   // Split host/path
   int slashPos = url.indexOf('/');
-  String host, path;
+  String hostWithPort, path;
   if (slashPos < 0) {
-    host = url;
+    hostWithPort = url;
     path = "/";
   } else {
-    host = url.substring(0, slashPos);
+    hostWithPort = url.substring(0, slashPos);
     path = url.substring(slashPos);
+  }
+
+  // Parse port from host
+  String host;
+  int port = useSSL ? 443 : 80;
+  int colonPos = hostWithPort.indexOf(':');
+  if (colonPos > 0) {
+    host = hostWithPort.substring(0, colonPos);
+    port = hostWithPort.substring(colonPos + 1).toInt();
+    if (port <= 0 || port > 65535) {
+      port = useSSL ? 443 : 80;
+    }
+  } else {
+    host = hostWithPort;
   }
 
   LOG("\njs_http_delete => manual approach");
   LOG("Host: " + host);
+  LOGF("Port: %d\n", port);
   LOG("Path: " + path);
 
-  // WiFiClientSecure
-  WiFiClientSecure client;
-  if (g_httpCAcert) {
-    client.setCACert(g_httpCAcert);
-    LOG("Using user-supplied CA cert (DELETE)");
+  String response;
+
+  if (useSSL) {
+    WiFiClientSecure client;
+    if (g_httpCAcert) {
+      client.setCACert(g_httpCAcert);
+    } else {
+      client.setInsecure();
+    }
+
+    if (!client.connect(host.c_str(), port)) {
+      LOG("Connection failed (DELETE)!");
+      return js_mkstr(js, "", 0);
+    }
+
+    client.print(String("DELETE ") + path + " HTTP/1.1\r\n");
+    client.print(String("Host: ") + host + "\r\n");
+    for (auto &hdr : g_http_headers) {
+      client.print(hdr.first + ": " + hdr.second + "\r\n");
+    }
+    client.print("Connection: close\r\n\r\n");
+
+    response = readHttpResponseBody(client);
+    client.stop();
   } else {
-    client.setInsecure();
-    LOG("No CA => setInsecure() (DELETE)");
+    WiFiClient client;
+    if (!client.connect(host.c_str(), port)) {
+      LOG("Connection failed (DELETE)!");
+      return js_mkstr(js, "", 0);
+    }
+
+    client.print(String("DELETE ") + path + " HTTP/1.1\r\n");
+    client.print(String("Host: ") + host + "\r\n");
+    for (auto &hdr : g_http_headers) {
+      client.print(hdr.first + ": " + hdr.second + "\r\n");
+    }
+    client.print("Connection: close\r\n\r\n");
+
+    response = readHttpResponseBody(client);
+    client.stop();
   }
 
-  // Connect
-  LOGF("Connecting to '%s':443...\n", host.c_str());
-  if (!client.connect(host.c_str(), 443)) {
-    LOG("Connection failed (DELETE)!");
-    return js_mkstr(js, "", 0);
-  }
-  LOG("Connected => sending DELETE request");
-
-  // e.g.:
-  // DELETE /path HTTP/1.1
-  client.print(String("DELETE ") + path + " HTTP/1.1\r\n");
-  client.print(String("Host: ") + host + "\r\n");
-
-  // If you want custom headers from g_http_headers, do:
-  // for(auto &hdr : g_http_headers) { ... }
-
-  client.print("Connection: close\r\n\r\n");
-
-  // read entire response
-  String body = readHttpResponseBody(client);
-  client.stop();
-
-  LOGF("Done DELETE. response size=%d\n", body.length());
-
-  // Return entire raw HTTP response
-  return js_mkstr(js, body.c_str(), body.length());
+  LOGF("Done DELETE. response size=%d\n", response.length());
+  return js_mkstr(js, response.c_str(), response.length());
 }
 
 static jsval_t js_http_set_header(struct js *js, jsval_t *args, int nargs) {
