@@ -2271,12 +2271,30 @@ String readHttpResponseBody(WiFiClient &client) {
   String body;
   bool chunked = false;
   int contentLength = -1;
+  String statusLine;
+
+  // Wait for data to be available (server might take time to respond)
+  unsigned long waitStart = millis();
+  while (!client.available() && client.connected() && (millis() - waitStart) < 5000) {
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+
+  if (!client.available()) {
+    LOG("No response received from server");
+    return "";
+  }
 
   // Read headers - check both connected and available for robustness
   unsigned long timeout = millis() + 15000;  // 15 second timeout
+  bool firstLine = true;
   while ((client.connected() || client.available()) && millis() < timeout) {
     if (!client.available()) {
-      vTaskDelay(pdMS_TO_TICKS(10));
+      // Wait a bit for more data
+      vTaskDelay(pdMS_TO_TICKS(50));
+      // Check again and break if still no data after a short wait
+      if (!client.available() && !client.connected()) {
+        break;
+      }
       continue;
     }
     String line = client.readStringUntil('\n');
@@ -2284,12 +2302,20 @@ String readHttpResponseBody(WiFiClient &client) {
     if (line.length() == 0) {  // Empty line = end of headers
       break;
     }
+    if (firstLine) {
+      statusLine = line;
+      LOG("HTTP Response: " + statusLine);
+      firstLine = false;
+    }
     headers += line + "\n";
-    if (line.indexOf("Transfer-Encoding: chunked") >= 0) {
+    // Check for chunked encoding (case-insensitive)
+    String lineLower = line;
+    lineLower.toLowerCase();
+    if (lineLower.indexOf("transfer-encoding: chunked") >= 0) {
       chunked = true;
     }
-    // Parse Content-Length
-    if (line.startsWith("content-length:") || line.startsWith("Content-Length:")) {
+    // Parse Content-Length (case-insensitive)
+    if (lineLower.startsWith("content-length:")) {
       int colonPos = line.indexOf(':');
       if (colonPos > 0) {
         String lenStr = line.substring(colonPos + 1);
@@ -2298,6 +2324,8 @@ String readHttpResponseBody(WiFiClient &client) {
       }
     }
   }
+
+  LOGF("Headers received. Chunked: %s, Content-Length: %d\n", chunked ? "yes" : "no", contentLength);
 
   if (chunked) {
     timeout = millis() + 15000;
@@ -2327,6 +2355,7 @@ String readHttpResponseBody(WiFiClient &client) {
     }
   } else if (contentLength > 0) {
     // Use Content-Length to read exact number of bytes
+    LOG("Reading body with Content-Length");
     body.reserve(contentLength);
     int bytesRead = 0;
     timeout = millis() + 15000;
@@ -2341,17 +2370,23 @@ String readHttpResponseBody(WiFiClient &client) {
         vTaskDelay(pdMS_TO_TICKS(10));
       }
     }
+    LOGF("Body read: %d bytes\n", bytesRead);
   } else {
     // No Content-Length, read until connection closes
+    LOG("Reading body until connection closes");
     timeout = millis() + 15000;
+    int bytesRead = 0;
     while ((client.connected() || client.available()) && millis() < timeout) {
       if (client.available()) {
         char c = client.read();
         body += c;
+        bytesRead++;
       } else {
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // Wait a bit for more data before checking again
+        vTaskDelay(pdMS_TO_TICKS(100));
       }
     }
+    LOGF("Body read: %d bytes (no Content-Length)\n", bytesRead);
   }
 
   return body;
@@ -2561,11 +2596,17 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
     host = hostWithPort;
   }
 
+  LOG("\njs_http_get => " + String(useSSL ? "HTTPS" : "HTTP"));
+  LOG("Host: " + host);
+  LOGF("Port: %d\n", port);
+  LOG("Path: " + path);
+
   String response;
   const int MAX_RETRIES = 3;  // Up to 4 attempts total
 
   for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
+      LOGF("Retry attempt %d...\n", attempt);
       // Exponential backoff: 1s, 2s, 4s between retries
       int delayMs = 1000 * (1 << (attempt - 1));
       vTaskDelay(pdMS_TO_TICKS(delayMs));
@@ -2576,13 +2617,18 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
       client.setTimeout(15000);  // 15 second timeout for read/write operations
       if (g_httpCAcert) {
         client.setCACert(g_httpCAcert);
+        LOG("Using CA cert for HTTPS");
       } else {
         client.setInsecure();
+        LOG("Using insecure mode for HTTPS");
       }
 
+      LOGF("Connecting to %s:%d (HTTPS)...\n", host.c_str(), port);
       if (!client.connect(host.c_str(), port, 10000)) {  // 10 second connection timeout
+        LOG("Connection failed!");
         continue;  // Retry
       }
+      LOG("Connected!");
 
       client.print(String("GET ") + path + " HTTP/1.1\r\n");
       client.print(String("Host: ") + host + "\r\n");
@@ -2599,9 +2645,13 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
     } else {
       WiFiClient client;
       client.setTimeout(15000);  // 15 second timeout for read/write operations
+
+      LOGF("Connecting to %s:%d (HTTP)...\n", host.c_str(), port);
       if (!client.connect(host.c_str(), port, 10000)) {  // 10 second connection timeout
+        LOG("Connection failed!");
         continue;  // Retry
       }
+      LOG("Connected!");
 
       client.print(String("GET ") + path + " HTTP/1.1\r\n");
       client.print(String("Host: ") + host + "\r\n");
@@ -2617,10 +2667,16 @@ static jsval_t js_http_get(struct js *js, jsval_t *args, int nargs) {
       client.stop();
     }
 
+    LOGF("Response length: %d bytes\n", response.length());
+
     // If we got a response, break out of retry loop
     if (response.length() > 0) {
       break;
     }
+  }
+
+  if (response.length() == 0) {
+    LOG("HTTP GET failed after all retries!");
   }
 
   return js_mkstr(js, response.c_str(), response.length());
