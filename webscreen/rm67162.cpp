@@ -294,6 +294,10 @@ void lcd_PushColors(uint16_t *data, uint32_t len) {
   TFT_CS_H;
 #endif
 }
+void lcd_brightness(uint8_t brightness) {
+  lcd_send_cmd(0x51, &brightness, 1);
+}
+
 void lcd_sleep() {
   lcd_send_cmd(0x10, NULL, 0);
 }

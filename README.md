@@ -156,6 +156,9 @@ WebScreen uses a JSON configuration file stored on the SD card as `/webscreen.js
     "background": "#2980b9",
     "foreground": "#00fff1"
   },
+  "display": {
+    "brightness": 200
+  },
   "script": "app.js"
 }
 ```
@@ -169,6 +172,7 @@ WebScreen uses a JSON configuration file stored on the SD card as `/webscreen.js
 | **settings.mqtt** | `enabled` | Enable MQTT functionality | `false` |
 | **screen** | `background` | Background color (hex format) | `"#000000"` |
 | | `foreground` | Text/foreground color (hex) | `"#FFFFFF"` |
+| **display** | `brightness` | Display brightness (0-255) | `200` |
 | **Root** | `script` | JavaScript file to execute | `"app.js"` |
 
 ### Example Configurations
@@ -374,6 +378,7 @@ WebScreen includes a comprehensive serial command system for interactive develop
 /info                    - Show device information and version
 /write <filename>        - Interactive JavaScript editor
 /load <script.js>        - Switch to different JS application
+/brightness <0-255>      - Set display brightness (no args to query current)
 /reboot                  - Restart the device
 ```
 
@@ -448,6 +453,7 @@ The firmware exposes numerous functions to your JavaScript applications. Some hi
 - **HTTP:** `http_get()`, `http_post()`, `http_delete()` (all support custom ports like `http://host:port/path`), `http_set_ca_cert_from_sd()`, `parse_json_value()`
 - **SD Card:** `sd_read_file()`, `sd_write_file()`, `sd_list_dir()`, `sd_delete_file()`
 - **BLE:** `ble_init()`, `ble_is_connected()`, `ble_write()`
+- **Display:** `set_brightness()`, `get_brightness()`
 - **UI Drawing:** `draw_label()`, `draw_rect()`, `show_image()`, `create_label()`, `label_set_text()`
 - **Image Handling:** `create_image()`, `create_image_from_ram()`, `rotate_obj()`, `move_obj()`, `animate_obj()`
 - **Styles & Layout:** `create_style()`, `obj_add_style()`, `style_set_*()`, `obj_align()`

@@ -1,6 +1,7 @@
 #include "serial_commands.h"
 #include "globals.h"
 #include "webscreen_config.h"
+#include "webscreen_hardware.h"
 #include <WiFi.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
@@ -85,6 +86,9 @@ void SerialCommands::processCommand(const String& command) {
   else if (baseCmd == "monitor" || baseCmd == "mon") {
     monitor(args);
   }
+  else if (baseCmd == "brightness") {
+    setBrightness(args);
+  }
   else {
     printError("Unknown command: " + baseCmd + ". Type /help for available commands.");
   }
@@ -109,6 +113,7 @@ void SerialCommands::showHelp() {
   Serial.println("/ping <host>             - Test network connectivity");
   Serial.println("/backup [save|restore]   - Backup/restore configuration");
   Serial.println("/monitor [cpu|mem|net]   - Live system monitoring");
+  Serial.println("/brightness <0-255>     - Set display brightness");
   Serial.println("/reboot                  - Restart the device");
   Serial.println("\nExamples:");
   Serial.println("/write hello.js");
@@ -1031,4 +1036,23 @@ void SerialCommands::monitor(const String& args) {
   }
   
   Serial.println("\n\nMonitoring stopped.");
+}
+
+void SerialCommands::setBrightness(const String& args) {
+  String val = args;
+  val.trim();
+
+  if (val.length() == 0) {
+    Serial.printf("Current brightness: %d\n", webscreen_display_get_brightness());
+    return;
+  }
+
+  int brightness = val.toInt();
+  if (brightness < 0 || brightness > 255) {
+    printError("Brightness must be between 0 and 255");
+    return;
+  }
+
+  webscreen_display_set_brightness((uint8_t)brightness);
+  printSuccess("Brightness set to " + String(brightness));
 }

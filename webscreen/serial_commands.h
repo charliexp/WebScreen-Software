@@ -28,7 +28,8 @@ private:
   static void ping(const String& args);
   static void backup(const String& args);
   static void monitor(const String& args);
-  
+  static void setBrightness(const String& args);
+
   static void printPrompt();
   static String formatBytes(size_t bytes);
   static void printError(const String& message);

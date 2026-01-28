@@ -183,6 +183,7 @@ static bool load_configuration(void) {
 
   g_webscreen_config.wifi.enabled = doc["wifi"]["enabled"] | g_webscreen_config.wifi.enabled;
   g_webscreen_config.display.brightness = doc["display"]["brightness"] | g_webscreen_config.display.brightness;
+  WEBSCREEN_DEBUG_PRINTF("Config: display.brightness = %d\n", g_webscreen_config.display.brightness);
   g_webscreen_config.system.log_level = doc["system"]["log_level"] | g_webscreen_config.system.log_level;
 
   if (doc["script_file"]) {
@@ -323,8 +324,11 @@ bool webscreen_load_config(const char *path,
   outBgColor = strtol(bgColorStr + 1, NULL, 16);
   outFgColor = strtol(fgColorStr + 1, NULL, 16);
 
-  WEBSCREEN_DEBUG_PRINTF("Config loaded - SSID: %s, Script: %s, MQTT: %s\n",
-                         outSSID.c_str(), outScript.c_str(), outMqttEnabled ? "enabled" : "disabled");
+  // Load display brightness into global config so init_lvgl_display() can apply it
+  g_webscreen_config.display.brightness = doc["display"]["brightness"] | g_webscreen_config.display.brightness;
+  WEBSCREEN_DEBUG_PRINTF("Config loaded - SSID: %s, Script: %s, MQTT: %s, Brightness: %d\n",
+                         outSSID.c_str(), outScript.c_str(), outMqttEnabled ? "enabled" : "disabled",
+                         g_webscreen_config.display.brightness);
 
   return true;
 }

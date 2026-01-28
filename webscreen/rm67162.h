@@ -57,4 +57,6 @@ void lcd_PushColors(uint16_t x,
 
 void lcd_PushColors(uint16_t *data, uint32_t len);
 
+void lcd_brightness(uint8_t brightness);
+
 void lcd_sleep();

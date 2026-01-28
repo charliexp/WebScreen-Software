@@ -6,19 +6,23 @@ WebScreen exposes a comprehensive set of functions to JavaScript applications ru
 
 ```json
 {
-  "wifi": {
-    "ssid": "MyNetwork",
-    "password": "MyPassword",
-    "enabled": true
+  "settings": {
+    "wifi": {
+      "ssid": "MyNetwork",
+      "pass": "MyPassword"
+    },
+    "mqtt": {
+      "enabled": false
+    }
   },
-  "mqtt": {
-    "enabled": false
+  "screen": {
+    "background": "#2980b9",
+    "foreground": "#00fff1"
   },
   "display": {
-    "background_color": "#2980b9",
-    "foreground_color": "#00fff1"
+    "brightness": 200
   },
-  "script_file": "my_app.js"
+  "script": "my_app.js"
 }
 ```
 
@@ -39,6 +43,23 @@ The following functions are available in your JavaScript applications:
 
 - **create_timer()**
   Create a timer object for periodic execution.
+
+### Display Control
+
+- **set_brightness(value)**
+  Set the display brightness. Value ranges from 0 (off) to 255 (maximum). Returns the applied brightness value, or -1 on error.
+  ```javascript
+  set_brightness(200);   // Set brightness to ~78%
+  set_brightness(0);     // Turn off display backlight
+  set_brightness(255);   // Maximum brightness
+  ```
+
+- **get_brightness()**
+  Returns the current display brightness value (0-255).
+  ```javascript
+  let current = get_brightness();
+  print("Current brightness: " + numberToString(current));
+  ```
 
 ### String Utilities
 

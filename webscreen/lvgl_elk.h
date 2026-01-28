@@ -16,6 +16,9 @@
 #include <utility>  // for std::pair
 
 #include "globals.h"
+#include "rm67162.h"
+#include "webscreen_hardware.h"
+#include "webscreen_main.h"
 
 // Global WiFiClient + PubSubClient
 static WiFiClient g_wifiClient;
@@ -274,6 +277,12 @@ void init_lvgl_display() {
   // Init the AMOLED driver & set rotation
   rm67162_init();
   lcd_setRotation(1);
+
+  // Apply configured brightness (default 0xD0 is set by rm67162_init)
+  if (g_webscreen_config.display.brightness > 0) {
+    lcd_brightness(g_webscreen_config.display.brightness);
+    LOG("Display brightness set to configured value: " + String(g_webscreen_config.display.brightness));
+  }
 
   // Init LVGL
   lv_init();
@@ -3270,6 +3279,23 @@ void wifiMqttMaintainLoop() {
 }
 
 /******************************************************************************
+ * H2) Display Brightness API
+ ******************************************************************************/
+
+static jsval_t js_set_brightness(struct js *js, jsval_t *args, int nargs) {
+  if (nargs < 1) return js_mknum(-1);
+  int val = (int)js_getnum(args[0]);
+  if (val < 0) val = 0;
+  if (val > 255) val = 255;
+  lcd_brightness((uint8_t)val);
+  return js_mknum(val);
+}
+
+static jsval_t js_get_brightness(struct js *js, jsval_t *args, int nargs) {
+  return js_mknum((double)webscreen_display_get_brightness());
+}
+
+/******************************************************************************
  * I) Register All JS Functions
  ******************************************************************************/
 
@@ -3283,6 +3309,8 @@ void register_js_functions() {
   js_set(js, global, "wifi_status", js_mkfun(js_wifi_status));
   js_set(js, global, "wifi_get_ip", js_mkfun(js_wifi_get_ip));
   js_set(js, global, "delay", js_mkfun(js_delay));
+  js_set(js, global, "set_brightness", js_mkfun(js_set_brightness));
+  js_set(js, global, "get_brightness", js_mkfun(js_get_brightness));
   js_set(js, global, "create_timer", js_mkfun(js_create_timer));
   js_set(js, global, "toNumber", js_mkfun(js_to_number));
   js_set(js, global, "numberToString", js_mkfun(js_number_to_string));

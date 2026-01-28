@@ -8,6 +8,7 @@
 #include "globals.h"
 #include "tick.h"
 #include "serial_commands.h"
+#include "webscreen_main.h"
 static lv_obj_t *fb_label = nullptr;
 static lv_obj_t *fb_gif = nullptr;
 static lv_obj_t *fb_container = nullptr;
@@ -52,6 +53,12 @@ void fallback_setup() {
   digitalWrite(PIN_LED, HIGH);
   rm67162_init();
   lcd_setRotation(1);
+
+  // Apply configured brightness
+  if (g_webscreen_config.display.brightness > 0) {
+    lcd_brightness(g_webscreen_config.display.brightness);
+  }
+
   fbBuf = (lv_color_t *)ps_malloc(sizeof(lv_color_t) * LVGL_LCD_BUF_SIZE);
   if (!fbBuf) {
     LOG("FALLBACK: Failed to allocate buffer");

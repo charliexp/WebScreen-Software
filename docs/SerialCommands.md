@@ -60,6 +60,7 @@ WebScreen> /help
 /wget <url> [file]       - Download file from URL to SD card
 /ping <host>             - Test network connectivity
 /backup [save|restore]   - Backup/restore configuration
+/brightness <0-255>      - Set display brightness
 /monitor [cpu|mem|net]   - Live system monitoring
 /reboot                  - Restart the device
 
@@ -126,6 +127,32 @@ SDK Version: v4.4.2
 WebScreen Version: 2.0.0
 Build Date: Dec 15 2024 14:30:25
 ```
+
+#### `/brightness <0-255>`
+Sets or queries the display brightness level.
+
+**Usage:**
+```
+WebScreen> /brightness
+Current brightness: 200
+
+WebScreen> /brightness 150
+[OK] Brightness set to 150
+
+WebScreen> /brightness 255
+[OK] Brightness set to 255
+```
+
+**Parameters:**
+- **No argument**: Displays the current brightness level
+- **0-255**: Sets the brightness to the specified value (0 = off, 255 = maximum)
+
+**Notes:**
+- Changes take effect immediately on the AMOLED display
+- To persist brightness across reboots, also set `display.brightness` in the configuration:
+  ```
+  /config set display.brightness 150
+  ```
 
 #### `/reboot` or `/restart`
 Restarts the WebScreen device. Useful for applying configuration changes or recovering from errors.

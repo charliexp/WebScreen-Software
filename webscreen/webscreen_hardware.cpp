@@ -9,6 +9,7 @@
 #include "webscreen_hardware.h"
 #include "webscreen_main.h"
 #include "pins_config.h"
+#include "rm67162.h"
 #include <SD_MMC.h>
 static bool g_hardware_initialized = false;
 static bool g_display_on = true;
@@ -89,11 +90,8 @@ bool webscreen_display_init(void) {
 bool webscreen_display_set_brightness(uint8_t brightness) {
   g_brightness = brightness;
 
-  if (brightness > 128) {
-    WEBSCREEN_PIN_HIGH(WEBSCREEN_PIN_LED);
-  } else {
-    WEBSCREEN_PIN_LOW(WEBSCREEN_PIN_LED);
-  }
+  // Send brightness command (0x51) to RM67162 AMOLED display
+  lcd_brightness(brightness);
 
   WEBSCREEN_DEBUG_PRINTF("Display brightness set to %d\n", brightness);
   return true;
